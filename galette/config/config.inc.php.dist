@@ -42,3 +42,15 @@ define("NAME_DB", "galette");
 define("PREFIX_DB", "galette_");
 /* FIXME will disappear soon */
 define("STOCK_FILES", "tempimages");
+
+define("OAUTH2_ENABLED", false);
+define("OAUTH2_KEYCLOAK_URL", "__KEYCLOAK_URL__");
+define("OAUTH2_KEYCLOAK_REALM", "__KEYCLOAK_REALM__");
+define("OAUTH2_KEYCLOAK_CLIENT_ID", "__KEYCLOAK_CLIENTID__");
+define("OAUTH2_KEYCLOAK_CLIENT_SECRET", "__KEYCLOAK_SECRETID__");
+define("LOGOUT_REDIRECT_URI", "__REDIRECT_AFTER_LOGOUT_URL__");
+define("OAUTH2_KEYCLOAK_LOGOUT_SSO", true);
+define("OAUTH2_KEYCLOAK_LOGIN_REDIRECT_URI", "__KEYCLOAK_REDIRECT_URL__");
+define("OAUTH2_KEYCLOAK_SUPERADMIN_ROLE", "superadmin");
+define("OAUTH2_KEYCLOAK_TOKEN_CLAIM_ROLES", "user-realm-role");
+define("OAUTH2_KEYCLOAK_TOKEN_CLAIM_USERNAME", "preferred_username");

@@ -60,8 +60,164 @@ class AuthController extends AbstractController
         ) {
             $this->session->urlRedirect = $r;
         }
-
         if (!$this->login->isLogged()) {
+            // try oauth2 with Keycloak if enabled
+	        $params = $request->getQueryParams();
+            if ( (!isset($params["direct"]) || $params["direct"] == "0") && OAUTH2_ENABLED){
+                $token = null;
+                $provider = new \Stevenmaguire\OAuth2\Client\Provider\Keycloak([
+                    'authServerUrl'             => OAUTH2_KEYCLOAK_URL,
+                    'realm'                     => OAUTH2_KEYCLOAK_REALM,
+                    'clientId'                  => OAUTH2_KEYCLOAK_CLIENT_ID,
+                    'clientSecret'              => OAUTH2_KEYCLOAK_CLIENT_SECRET,
+                    'redirectUri'               => OAUTH2_KEYCLOAK_LOGIN_REDIRECT_URI,
+                    'encryptionAlgorithm'       => null,
+                    'encryptionKey'             => null,
+                    'encryptionKeyPath'         => null
+                ]);
+		        $provider->version='24.0.5';
+
+                if (isset($this->session->oauth2Token)) {
+                    $existingAccessToken = $this->session->oauth2Token;
+                    try {
+                        if ($existingAccessToken->hasExpired()) {
+                            $token = $provider->getAccessToken('refresh_token', [
+                                'refresh_token' => $existingAccessToken->getRefreshToken()
+                            ]);
+                        } else {
+                            $token = $existingAccessToken;
+                        }
+                    } catch (Exception $e) {
+                        $this->flash->addMessage('error_detected: $e->getMessage()', _T("Keycloak Error."));
+                        $this->view->render(
+			                $response,
+                	        'pages/index.html.twig',
+                	        array(
+                    	         'page_title'    => _T("Login"),
+                            )
+                        );
+            		    return $response;
+                    }
+                }
+                if (!isset($_GET['code'])) {
+                    // If we don't have an authorization code then get one
+                    $authUrl = $provider->getAuthorizationUrl();
+                    $_SESSION['oauth2state'] = $provider->getState();
+                    return $response->withStatus(301)->withHeader('Location', $authUrl);
+                // Check given state against previously stored one to mitigate CSRF attack
+                } elseif (empty($_GET['state']) || ($_GET['state'] !== $_SESSION['oauth2state'])) {
+                    unset($_SESSION['oauth2state']);
+                    $this->flash->addMessage('Bad oauth2 State', _T("Keycloak Error."));
+                        $this->view->render(
+			                $response,
+                	        'pages/index.html.twig',
+                	        array(
+                    	         'page_title'    => _T("Login"),
+                            )
+                        );
+            		    return $response;
+                } else {
+                    // Try to get an access token (using the authorization coe grant)
+                    try {
+                        $token = $provider->getAccessToken('authorization_code', [
+                            'code' => $_GET['code']
+                        ]);
+                    } catch (Exception $e) {
+                        $this->flash->addMessage('error_detected: $e->getMessage()', _T("Keycloak Error."));
+                        $this->view->render(
+			                $response,
+                	        'pages/index.html.twig',
+                	        array(
+                    	         'page_title'    => _T("Login"),
+                            )
+                        );
+            		    return $response;
+                    }
+                }
+		    /*
+		    if ($existingAccessToken->hasExpired()) {
+   		         $newAccessToken = $provider->getAccessToken('refresh_token', [
+        		 'refresh_token' => $existingAccessToken->getRefreshToken()
+    	            ]);
+		    // Purge old access token and store new access token to your data store.
+		     echo 'Access Token: ' . $token->getToken() . "<br>";
+		     echo 'Refresh Token: ' . $token->getRefreshToken() . "<br>";
+        	     echo 'Expired in: ' . $token->getExpires() . "<br>";
+        	     echo 'Already expired? ' . ($token->hasExpired() ? 'expired' : 'not expired') . "<br>";
+                     echo 'Values: ' . var_dump($token->getValues()) . "<br>";
+		    */
+                    // Optional: Now you have a token you can look up a users profile data
+                try {
+                        // We got an access token, let's now get the user's details
+                    $user = $provider->getResourceOwner($token);
+                    $infos = $user->toArray();
+		        	$nick = $infos[OAUTH2_KEYCLOAK_TOKEN_CLAIM_USERNAME];
+			        if(isset($infos[OAUTH2_KEYCLOAK_TOKEN_CLAIM_ROLES]) && (in_array(OAUTH2_KEYCLOAK_SUPERADMIN_ROLE, $infos[OAUTH2_KEYCLOAK_TOKEN_CLAIM_ROLES]))){
+			            $this->login->logAdmin($nick, $this->preferences);
+ 			        } else {
+                        if(!$this->login->loginExists($nick)) {
+                            $this->flash->addMessage('error_detected', _T("Login failed."));
+                            $this->history->add(_T("Authentication failed"), $nick);
+                            $this->view->render(
+                                $response,
+                                'pages/index.html.twig',
+                                array(
+                                     'page_title'    => _T("Login"),
+                                )
+                            );
+                            return $response;
+                        }
+			            $this->login->logIn($nick, "OPENID", false);
+			        }
+			  
+                } catch (Exception $e) {
+                    $this->flash->addMessage('error_detected: $e->getMessage()', _T("Keycloak Error."));
+                        $this->view->render(
+			                $response,
+                	        'pages/index.html.twig',
+                	        array(
+                    	         'page_title'    => _T("Login"),
+                            )
+                        );
+            		    return $response;
+                }
+ 		        if ($this->login->isLogged()) {
+                    if (
+                        $this->login->isSuperAdmin()
+                        || $this->login->isAdmin()
+                        || $this->login->isStaff()
+                    ) {
+                        $deprecated_constants = [
+                            'NON_UTF_DBCONNECT',
+                            'GALETTE_CARD_WIDTH',
+                            'GALETTE_CARD_HEIGHT',
+                            'GALETTE_CARD_COLS',
+                            'GALETTE_CARD_ROWS'
+                        ];
+
+                        foreach ($deprecated_constants as $deprecated_constant) {
+                            if (defined($deprecated_constant)) {
+                                $this->flash->addMessage(
+                                    'warning',
+                                    sprintf(
+                                        'It appears you are using %1$s constant, that has been removed in current release.',
+                                        $deprecated_constant
+                                    )
+                                );
+                            }
+                        }
+                    }
+                    $this->session->login = $this->login;
+                    $this->session->oauth2Token = $token;
+                    $this->history->add(_T("Login"));
+                    return $this->galetteRedirect($request, $response);
+                } else {
+                    $this->flash->addMessage('error_detected', _T("Login failed."));
+                    $this->history->add(_T("Authentication failed"), $nick);
+                    return $response->withStatus(301)->withHeader('Location', $this->routeparser->urlFor('login'));
+                }
+            }
+        
             // display page
             $this->view->render(
                 $response,
@@ -203,12 +359,33 @@ class AuthController extends AbstractController
      */
     public function logout(Request $request, Response $response): Response
     {
+        $logoutUrl = LOGOUT_REDIRECT_URI;
+        if ($logoutUrl == null){
+            $logoutUrl = $this->routeparser->urlFor('slash');  
+        }
+        if (OAUTH2_KEYCLOAK_LOGOUT_SSO && isset($this->session->oauth2Token)) {
+            $provider = new \Stevenmaguire\OAuth2\Client\Provider\Keycloak([
+                'authServerUrl'             => OAUTH2_KEYCLOAK_URL,
+                'realm'                     => OAUTH2_KEYCLOAK_REALM,
+                'clientId'                  => OAUTH2_KEYCLOAK_CLIENT_ID,
+                'clientSecret'              => OAUTH2_KEYCLOAK_CLIENT_SECRET,
+                'redirectUri'               => $logoutUrl,
+                'encryptionAlgorithm'       => null,
+                'encryptionKey'             => null,
+                'encryptionKeyPath'         => null
+            ]);
+            $provider->version='24.0.5';
+            $logoutUrl = $provider->getLogoutUrl([
+                'access_token' => $this->session->oauth2Token,
+                'post_logout_redirect_uri' => $logoutUrl
+            ]);
+        }
         $this->login->logOut();
         $this->history->add(_T("Log off"));
         \RKA\Session::destroy();
         return $response
             ->withStatus(301)
-            ->withHeader('Location', $this->routeparser->urlFor('slash'));
+            ->withHeader('Location', $logoutUrl);
     }
 
     /**

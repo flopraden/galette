@@ -119,7 +119,7 @@ class Login extends Authentication
      *
      * @return boolean
      */
-    public function logIn(string $user, string $passe): bool
+    public function logIn(string $user, string $passe, bool $check_pass = true): bool
     {
         try {
             $select = $this->select();
@@ -157,7 +157,7 @@ class Login extends Authentication
                     );
                     return false;
                 }
-
+		if ($check_pass) {
                 //check if passwords matches
                 $pw_checked = password_verify($passe, $row->mdp_adh);
                 if (!$pw_checked) {
@@ -173,7 +173,7 @@ class Login extends Authentication
                     );
                     return false;
                 }
-
+		}
                 $this->logUser($row);
                 return true;
             }

@@ -70,7 +70,7 @@ abstract class Authentication
      *
      * @return boolean
      */
-    abstract public function logIn(string $user, string $passe): bool;
+    abstract public function logIn(string $user, string $passe, bool $check_pass = true): bool;
 
     /**
      * Does this login already exists ?
